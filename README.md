@@ -27,10 +27,10 @@ model-index:
     metrics:
     - name: F1 Score
       type: f1
-      value: 0.9587
+      value: 0.9261
     - name: Accuracy
       type: accuracy
-      value: 0.9548
+      value: 0.9278
 widget:
 - text: "Sayantika Biswas"
   example_title: "Real Name (Bengali)"
@@ -59,9 +59,9 @@ widget:
 
 </div>
 
-`CompactNameClassifier` is a state-of-the-art, ultra-lightweight neural text classifier trained **from scratch** on a curated dataset of **455,669 records** (245.7k real human names across global cultures + 210.0k non-names, usernames, gamer tags, and alphanumeric codes).
+`CompactNameClassifier` is a state-of-the-art, ultra-lightweight neural text classifier trained **from scratch** on a curated, balanced dataset of **506,305 records** (244.0k audited pure alphabetic human names across global cultures + 262.3k non-names, curated English vocabulary, usernames, gamer tags, and alphanumeric codes).
 
-Unlike generic large language models or pretrained BERT variants, `CompactNameClassifier` has **zero external pretrained dependencies**, weighs just **~647 KB** (INT8 ONNX), and delivers sub-millisecond CPU inference (**< 0.25 ms per query**).
+Unlike generic large language models or pretrained BERT variants, `CompactNameClassifier` has **zero external pretrained dependencies**, weighs just **~632 KB** (INT8 ONNX), and delivers sub-millisecond CPU inference (**< 0.45 ms per query**).
 
 ---
 
@@ -69,14 +69,15 @@ Unlike generic large language models or pretrained BERT variants, `CompactNameCl
 
 | Metric | Previous Pretrained Model | **CompactNameClassifier (Scratch)** | Improvement |
 | :--- | :--- | :--- | :--- |
-| **Model Size (INT8 ONNX)** | 4.30 MB (2.45 MB pruned) | **~647 KB** | **70%–84% smaller** |
+| **Model Size (INT8 ONNX)** | 4.30 MB (2.45 MB pruned) | **~632 KB** | **74%–85% smaller** |
 | **Total Parameters** | 4,380,000 params | **532,482 params** | **88% parameter reduction** |
 | **Vocabulary Size** | 30,522 tokens | **4,000 tokens** | **87% smaller vocabulary** |
 | **Sequence Length** | 16 tokens | **20 tokens** | **No truncation blind spots** |
-| **CPU Latency (Single Thread)** | ~1.20 ms | **< 0.25 ms** | **~5x faster inference** |
-| **Throughput** | ~800 queries/sec | **> 4,000 queries/sec** | Single CPU core |
-| **Validation Accuracy** | — | **95.48%** | Evaluated on held-out test split |
-| **Validation F1-Score** | — | **95.87%** | Balanced precision & recall |
+| **CPU Latency (Single Thread)** | ~1.20 ms | **< 0.45 ms** | **~3x faster inference** |
+| **Throughput** | ~800 queries/sec | **> 2,250 queries/sec** | Single CPU core |
+| **Validation Accuracy** | — | **92.78%** | Evaluated on held-out test split |
+| **Validation F1-Score** | — | **92.61%** | Balanced precision & recall |
+| **Corner Cases Benchmark** | — | **94.1% (16/17)** | High accuracy on tricky words & handles |
 
 ---
 
@@ -224,11 +225,10 @@ model.eval()
 ---
 
 ## 📊 Training Data
-
-- **Total Dataset Size**: 455,669 examples
-  - **Positive Examples (Real Names)**: 245,669 entries spanning diverse cultural origins (Western, South Asian, East Asian, Hispanic, Middle Eastern, African).
-  - **Negative Examples (Non-Names)**: 210,000 entries including gaming handles, social media usernames, alphanumeric serial numbers, code identifiers, and random token noise.
-- **Split**: 90% Training / 10% Validation
+- **Total Dataset Size**: 506,305 examples
+  - **Positive Examples (Real Names)**: 243,998 entries (audited, 100% pure alphabetic, spanning diverse global cultures: Western, South Asian, East Asian, Hispanic, Middle Eastern, African).
+  - **Negative Examples (Non-Names)**: 262,307 entries including gaming handles, social media usernames, alphanumeric serial numbers, code identifiers, and 52k curated high-frequency English vocabulary words.
+- **Split**: 90% Training / 10% Validation (455,728 Train / 50,577 Val)
 
 ---
 

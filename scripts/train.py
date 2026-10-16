@@ -87,6 +87,23 @@ def augment_dataset(texts, labels, aug_rate=0.20):
         corrected_texts.append(compound)
         corrected_labels.append(1)
 
+    # Compound Non-Names & English Phrases (30,000 samples) - Prevents 2-word English phrases from being misclassified as names
+    non_names = [str(t).strip() for t, l in zip(texts, labels) if l == 0 and len(str(t).strip()) >= 3]
+    if non_names:
+        print(f"--> Augmenting 30,000 compound non-name phrases (e.g. 'Customer Service', 'File System')...")
+        sample_w1 = random.choices(non_names, k=30000)
+        sample_w2 = random.choices(non_names, k=30000)
+        for w1, w2 in zip(sample_w1, sample_w2):
+            r = random.random()
+            if r < 0.5:
+                compound_non = f"{w1.title()} {w2.title()}"
+            elif r < 0.8:
+                compound_non = f"{w1.lower()} {w2.lower()}"
+            else:
+                compound_non = f"{w1.upper()} {w2.upper()}"
+            corrected_texts.append(compound_non)
+            corrected_labels.append(0)
+
     # Contaminated Noise Names (30,000 samples)
     print(f"--> Augmenting 30,000 contaminated names with roll numbers / dept codes...")
     noise_prefixes = ["112_", "101_", "cxd-", "roll_", "sec_", "01_"]
