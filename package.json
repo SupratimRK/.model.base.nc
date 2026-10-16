@@ -1,0 +1,13 @@
+{
+  "name": "compact-name-classifier",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Ultra-compact sub-millisecond name vs non-name neural classifier trained from scratch",
+  "main": "scripts/classifier.mjs",
+  "scripts": {
+    "test": "node scripts/test_benchmark.mjs"
+  },
+  "dependencies": {
+    "onnxruntime-node": "^1.30.0"
+  }
+}

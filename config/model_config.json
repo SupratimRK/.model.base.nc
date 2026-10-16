@@ -1,0 +1,15 @@
+{
+  "model_type": "CompactNameClassifier",
+  "vocab_size": 4000,
+  "emb_dim": 64,
+  "hidden_dim": 128,
+  "num_layers": 2,
+  "num_heads": 4,
+  "max_length": 20,
+  "labels": {
+    "0": "NON_NAME",
+    "1": "REAL_NAME"
+  },
+  "best_val_accuracy": 0.9547553093259464,
+  "best_val_f1": 0.9586647384912027
+}
