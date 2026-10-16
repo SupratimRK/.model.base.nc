@@ -27,10 +27,10 @@ model-index:
     metrics:
     - name: F1 Score
       type: f1
-      value: 0.9261
+      value: 0.9283
     - name: Accuracy
       type: accuracy
-      value: 0.9278
+      value: 0.9291
 widget:
 - text: "Sayantika Biswas"
   example_title: "Real Name (Bengali)"
@@ -59,7 +59,7 @@ widget:
 
 </div>
 
-`CompactNameClassifier` is a state-of-the-art, ultra-lightweight neural text classifier trained **from scratch** on a curated, balanced dataset of **506,305 records** (244.0k audited pure alphabetic human names across global cultures + 262.3k non-names, curated English vocabulary, usernames, gamer tags, and alphanumeric codes).
+`CompactNameClassifier` is a state-of-the-art, ultra-lightweight neural text classifier trained **from scratch** on a curated, balanced dataset of **510,162 records** (247,864 audited pure alphabetic human names across global cultures + 262,298 non-names, curated English vocabulary, usernames, gamer tags, and alphanumeric codes).
 
 Unlike generic large language models or pretrained BERT variants, `CompactNameClassifier` has **zero external pretrained dependencies**, weighs just **~632 KB** (INT8 ONNX), and delivers sub-millisecond CPU inference (**< 0.45 ms per query**).
 
@@ -74,9 +74,9 @@ Unlike generic large language models or pretrained BERT variants, `CompactNameCl
 | **Vocabulary Size** | 30,522 tokens | **4,000 tokens** | **87% smaller vocabulary** |
 | **Sequence Length** | 16 tokens | **20 tokens** | **No truncation blind spots** |
 | **CPU Latency (Single Thread)** | ~1.20 ms | **< 0.45 ms** | **~3x faster inference** |
-| **Throughput** | ~800 queries/sec | **> 2,250 queries/sec** | Single CPU core |
-| **Validation Accuracy** | — | **92.78%** | Evaluated on held-out test split |
-| **Validation F1-Score** | — | **92.61%** | Balanced precision & recall |
+| **Throughput** | ~800 queries/sec | **> 2,216 queries/sec** | Single CPU core |
+| **Validation Accuracy** | — | **92.91%** | Evaluated on held-out test split |
+| **Validation F1-Score** | — | **92.83%** | Balanced precision & recall |
 | **Corner Cases Benchmark** | — | **94.1% (16/17)** | High accuracy on tricky words & handles |
 
 ---
@@ -225,10 +225,10 @@ model.eval()
 ---
 
 ## 📊 Training Data
-- **Total Dataset Size**: 506,305 examples
-  - **Positive Examples (Real Names)**: 243,998 entries (audited, 100% pure alphabetic, spanning diverse global cultures: Western, South Asian, East Asian, Hispanic, Middle Eastern, African).
-  - **Negative Examples (Non-Names)**: 262,307 entries including gaming handles, social media usernames, alphanumeric serial numbers, code identifiers, and 52k curated high-frequency English vocabulary words.
-- **Split**: 90% Training / 10% Validation (455,728 Train / 50,577 Val)
+- **Total Dataset Size**: 510,162 examples
+  - **Positive Examples (Real Names)**: 247,864 entries (audited, 100% pure alphabetic, spanning diverse global cultures: Western, South Asian, East Asian, Hispanic, Middle Eastern, African).
+  - **Negative Examples (Non-Names)**: 262,298 entries including gaming handles, social media usernames, alphanumeric serial numbers, code identifiers, and 52k curated high-frequency English vocabulary words.
+- **Split**: 90% Training / 10% Validation (459,206 Train / 50,956 Val)
 
 ---
 
