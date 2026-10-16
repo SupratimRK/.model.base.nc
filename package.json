@@ -4,6 +4,10 @@
   "type": "module",
   "description": "Ultra-compact sub-millisecond name vs non-name neural classifier trained from scratch",
   "main": "scripts/classifier.mjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SupratimRK/.model.base.nc.git"
+  },
   "scripts": {
     "test": "node scripts/test_benchmark.mjs"
   },

@@ -121,7 +121,14 @@ Unlike generic large language models or pretrained BERT variants, `CompactNameCl
 
 ## 🚀 Quickstart & Usage
 
-### 1. Download Model from Hugging Face Hub
+### 1. Clone Repository & Setup
+```bash
+git clone https://github.com/SupratimRK/.model.base.nc.git
+cd .model.base.nc
+npm install
+```
+
+### 2. Download Model from Hugging Face Hub
 
 ```python
 from huggingface_hub import hf_hub_download
@@ -134,7 +141,7 @@ onnx_path = hf_hub_download(repo_id=repo_id, filename="model_int8.onnx")
 tok_path = hf_hub_download(repo_id=repo_id, filename="tokenizer.json")
 ```
 
-### 2. Python Inference (ONNX Runtime)
+### 3. Python Inference (ONNX Runtime)
 
 ```python
 import numpy as np
@@ -175,7 +182,7 @@ CSE3048              => NON_NAME (99.9%)
 
 ---
 
-### 3. Node.js Native Inference (onnxruntime-node)
+### 4. Node.js Native Inference (onnxruntime-node)
 
 ```javascript
 import { CompactNameClassifier } from './scripts/classifier.mjs';
@@ -195,7 +202,7 @@ console.log(result);
 
 ---
 
-### 4. PyTorch Inference
+### 5. PyTorch Inference
 
 ```python
 import torch
