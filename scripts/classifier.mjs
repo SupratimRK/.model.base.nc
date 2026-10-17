@@ -65,6 +65,7 @@ export class CompactNameClassifier {
 
   tokenize(text) {
     if (!text || typeof text !== 'string') return [this.clsId, this.sepId];
+    text = text.toLowerCase().trim();
 
     // Pre-tokenize: Whitespace, Punctuation, and Individual Digits
     // Split text into tokens separating punctuation and digits

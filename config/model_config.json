@@ -6,10 +6,11 @@
   "num_layers": 2,
   "num_heads": 4,
   "max_length": 20,
+  "lowercase": true,
   "labels": {
     "0": "NON_NAME",
     "1": "REAL_NAME"
   },
-  "best_val_accuracy": 0.9290760656252454,
-  "best_val_f1": 0.9282594886453867
+  "best_val_accuracy": 0.9444568008573104,
+  "best_val_f1": 0.9621136544393823
 }

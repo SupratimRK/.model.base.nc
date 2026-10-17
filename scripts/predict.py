@@ -36,6 +36,7 @@ class NameClassifier:
         tok_json = os.path.join(TOKENIZER_DIR, "tokenizer.json")
         self.tokenizer = PreTrainedTokenizerFast(
             tokenizer_file=tok_json,
+            do_lower_case=True,
             pad_token="[PAD]",
             unk_token="[UNK]",
             cls_token="[CLS]",

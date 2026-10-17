@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import json
-import random
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
@@ -23,7 +22,7 @@ HIDDEN_DIM = 128
 NUM_LAYERS = 2
 NUM_HEADS = 4
 MAX_LENGTH = 20
-BATCH_SIZE = 256
+BATCH_SIZE = 512
 EPOCHS = 6
 LEARNING_RATE = 5e-4
 WEIGHT_DECAY = 0.01
@@ -50,91 +49,6 @@ else:
     device = torch.device("cpu")
     print("--> Warning: CUDA not available, using CPU")
 
-COMMON_KEYWORDS = {
-    'get', 'set', 'post', 'put', 'delete', 'run', 'test', 'demo',
-    'null', 'undefined', 'true', 'false', 'none', 'user', 'admin', 'root', 'api'
-}
-
-def augment_dataset(texts, labels, aug_rate=0.20):
-    """
-    Augments dataset with:
-      1. Keyword correction: common verbs ('get', 'set') flagged as NON_NAME.
-      2. Compound names: First + Last name pairs (e.g., 'Supratim Mondal') as REAL_NAME.
-      3. Contaminated names: names polluted with roll codes/numbers ('112_Sayantika', 'Ayan CSE3048') as NON_NAME.
-      4. Casing variations: lowercase, uppercase, titlecase.
-    """
-    random.seed(42)
-    corrected_texts = []
-    corrected_labels = []
-
-    real_names = [str(t).strip() for t, l in zip(texts, labels) if l == 1 and str(t).strip().lower() not in COMMON_KEYWORDS]
-
-    for text, label in zip(texts, labels):
-        t_str = str(text).strip()
-        if t_str.lower() in COMMON_KEYWORDS:
-            corrected_texts.append(t_str)
-            corrected_labels.append(0)
-        else:
-            corrected_texts.append(t_str)
-            corrected_labels.append(label)
-
-    # Compound Full Names (50,000 samples)
-    print(f"--> Augmenting 50,000 compound full names (First + Last)...")
-    sample_first = random.choices(real_names, k=50000)
-    sample_last = random.choices(real_names, k=50000)
-    for f, l in zip(sample_first, sample_last):
-        compound = f"{f.title()} {l.title()}"
-        corrected_texts.append(compound)
-        corrected_labels.append(1)
-
-    # Compound Non-Names & English Phrases (30,000 samples) - Prevents 2-word English phrases from being misclassified as names
-    non_names = [str(t).strip() for t, l in zip(texts, labels) if l == 0 and len(str(t).strip()) >= 3]
-    if non_names:
-        print(f"--> Augmenting 30,000 compound non-name phrases (e.g. 'Customer Service', 'File System')...")
-        sample_w1 = random.choices(non_names, k=30000)
-        sample_w2 = random.choices(non_names, k=30000)
-        for w1, w2 in zip(sample_w1, sample_w2):
-            r = random.random()
-            if r < 0.5:
-                compound_non = f"{w1.title()} {w2.title()}"
-            elif r < 0.8:
-                compound_non = f"{w1.lower()} {w2.lower()}"
-            else:
-                compound_non = f"{w1.upper()} {w2.upper()}"
-            corrected_texts.append(compound_non)
-            corrected_labels.append(0)
-
-    # Contaminated Noise Names (30,000 samples)
-    print(f"--> Augmenting 30,000 contaminated names with roll numbers / dept codes...")
-    noise_prefixes = ["112_", "101_", "cxd-", "roll_", "sec_", "01_"]
-    noise_suffixes = ["_99", "CSE3048", "2024", "_fps", "123", "_official", "ECE01"]
-    for name in random.choices(real_names, k=30000):
-        r = random.random()
-        if r < 0.4:
-            noisy = random.choice(noise_prefixes) + name
-        elif r < 0.8:
-            noisy = name + " " + random.choice(noise_suffixes)
-        else:
-            noisy = name + random.choice(noise_suffixes)
-        corrected_texts.append(noisy)
-        corrected_labels.append(0)
-
-    # Casing Augmentation
-    final_texts = []
-    for t, l in zip(corrected_texts, corrected_labels):
-        if random.random() < aug_rate:
-            r = random.random()
-            if r < 0.4:
-                final_texts.append(t.lower())
-            elif r < 0.7:
-                final_texts.append(t.upper())
-            else:
-                final_texts.append(t.title())
-        else:
-            final_texts.append(t)
-
-    return final_texts, corrected_labels
-
 def pre_tokenize_dataset(tokenizer, texts, max_length=MAX_LENGTH):
     """Pre-tokenize all texts in memory into contiguous int32 tensors."""
     t0 = time.time()
@@ -153,7 +67,7 @@ def pre_tokenize_dataset(tokenizer, texts, max_length=MAX_LENGTH):
 
 def main():
     print("===============================================================")
-    print("Training Dedicated Ultra-Compact Name Classifier From Scratch")
+    print("Training Dedicated Ultra-Compact Name Classifier (Uncased)")
     print("===============================================================")
 
     # 1. Load Tokenizer
@@ -161,6 +75,7 @@ def main():
     tok_json_path = os.path.join(TOKENIZER_DIR, "tokenizer.json")
     tokenizer = PreTrainedTokenizerFast(
         tokenizer_file=tok_json_path,
+        do_lower_case=True,
         pad_token="[PAD]",
         unk_token="[UNK]",
         cls_token="[CLS]",
@@ -168,41 +83,37 @@ def main():
         mask_token="[MASK]"
     )
 
-    # 2. Load Parquet Datasets
+    # 2. Load Parquet Datasets (Permanently de-biased and multi-word balanced on disk)
     train_parquet = os.path.join(MASTER_DATA_DIR, "train.parquet")
     val_parquet = os.path.join(MASTER_DATA_DIR, "val.parquet")
 
-    print(f"--> Loading train data: {train_parquet}")
+    print(f"--> Loading master train dataset: {train_parquet}")
     df_train = pd.read_parquet(train_parquet)
-    print(f"--> Loading val data:   {val_parquet}")
+    print(f"--> Loading master val dataset:   {val_parquet}")
     df_val = pd.read_parquet(val_parquet)
 
-    train_texts = df_train["text"].astype(str).tolist()
+    train_texts = df_train["text"].dropna().astype(str).str.lower().str.strip().tolist()
     train_labels = df_train["is_name"].astype(int).tolist()
-    val_texts = df_val["text"].astype(str).tolist()
+    val_texts = df_val["text"].dropna().astype(str).str.lower().str.strip().tolist()
     val_labels = df_val["is_name"].astype(int).tolist()
 
     print(f"    Train size: {len(train_texts):,} (Real: {sum(train_labels):,}, Non: {len(train_labels)-sum(train_labels):,})")
     print(f"    Val size:   {len(val_texts):,} (Real: {sum(val_labels):,}, Non: {len(val_labels)-sum(val_labels):,})")
 
-    # 3. Apply Multi-Task Real-World Augmentation (Compound names, noise injection, keywords)
-    train_texts_aug, train_labels_aug = augment_dataset(train_texts, train_labels, aug_rate=0.20)
-    print(f"    Augmented train size: {len(train_texts_aug):,} (Real: {sum(train_labels_aug):,}, Non: {len(train_labels_aug)-sum(train_labels_aug):,})")
-
-    # 4. In-Memory Pre-Tokenization
-    train_ids, train_masks = pre_tokenize_dataset(tokenizer, train_texts_aug, max_length=MAX_LENGTH)
+    # 3. In-Memory Pre-Tokenization
+    train_ids, train_masks = pre_tokenize_dataset(tokenizer, train_texts, max_length=MAX_LENGTH)
     val_ids, val_masks = pre_tokenize_dataset(tokenizer, val_texts, max_length=MAX_LENGTH)
 
-    train_labels_tensor = torch.tensor(train_labels_aug, dtype=torch.long)
+    train_labels_tensor = torch.tensor(train_labels, dtype=torch.long)
     val_labels_tensor = torch.tensor(val_labels, dtype=torch.long)
 
     train_dataset = TensorDataset(train_ids, train_masks, train_labels_tensor)
     val_dataset = TensorDataset(val_ids, val_masks, val_labels_tensor)
 
-    train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True, pin_memory=True)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=1024, shuffle=False, pin_memory=True)
 
-    # 5. Initialize Model
+    # 4. Initialize Model
     print("--> Initializing CompactNameClassifier architecture...")
     model = CompactNameClassifier(
         vocab_size=VOCAB_SIZE,
@@ -219,16 +130,24 @@ def main():
     print(f"    Total Parameters:     {total_params:,}")
     print(f"    Trainable Parameters: {trainable_params:,}")
 
-    # 6. Optimizer, Scheduler, Loss
+    # 5. Class Weighted Loss, Optimizer, Scheduler
+    num_real = sum(train_labels)
+    num_non = len(train_labels) - num_real
+    total = len(train_labels)
+    weight_non = total / (2.0 * max(1, num_non))
+    weight_real = total / (2.0 * max(1, num_real))
+    class_weights = torch.tensor([weight_non, weight_real], dtype=torch.float, device=device)
+    print(f"--> Loss Class Weights: NON_NAME={weight_non:.3f}, REAL_NAME={weight_real:.3f}")
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     total_steps = len(train_loader) * EPOCHS
     warmup_steps = int(total_steps * 0.1)
     scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
-    criterion = nn.CrossEntropyLoss(label_smoothing=LABEL_SMOOTHING)
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=LABEL_SMOOTHING)
 
     scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
 
-    # 7. Training Loop
+    # 6. Training Loop
     best_val_f1 = 0.0
     best_val_acc = 0.0
     weights_path = os.path.join(SAVE_DIR, "model_weights.pt")
@@ -303,7 +222,7 @@ def main():
     print(f"Weights saved to: {weights_path}")
     print("===============================================================")
 
-    # 8. Save Model Configuration JSON
+    # 7. Save Model Configuration JSON
     config = {
         "model_type": "CompactNameClassifier",
         "vocab_size": VOCAB_SIZE,
@@ -312,6 +231,7 @@ def main():
         "num_layers": NUM_LAYERS,
         "num_heads": NUM_HEADS,
         "max_length": MAX_LENGTH,
+        "lowercase": True,
         "labels": {0: "NON_NAME", 1: "REAL_NAME"},
         "best_val_accuracy": float(best_val_acc),
         "best_val_f1": float(best_val_f1)

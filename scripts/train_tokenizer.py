@@ -2,7 +2,7 @@ import os
 import sys
 import string
 import pandas as pd
-from tokenizers import Tokenizer
+from tokenizers import Tokenizer, normalizers
 from tokenizers.models import WordPiece
 from tokenizers.pre_tokenizers import Sequence, Whitespace, Punctuation, Digits
 from tokenizers.trainers import WordPieceTrainer
@@ -20,11 +20,11 @@ os.makedirs(TOKENIZER_DIR, exist_ok=True)
 
 def train_custom_tokenizer(vocab_size=4000):
     print("===============================================================")
-    print("Training Custom Domain WordPiece Tokenizer From Scratch")
+    print("Training Custom Domain WordPiece Tokenizer (100% Uncased)")
     print("===============================================================")
     print(f"Target Vocabulary Size: {vocab_size}")
+    print(f"Normalizer: NFKC + Lowercase + StripAccents")
     print(f"Pre-Tokenizer: Whitespace + Punctuation + Digits(individual_digits=True)")
-    print(f"Casing: Case-Preserving (lowercase=False)")
 
     # 1. Load Texts from Master Dataset
     train_parquet = os.path.join(MASTER_DATA_DIR, "train.parquet")
@@ -33,11 +33,21 @@ def train_custom_tokenizer(vocab_size=4000):
     df_train = pd.read_parquet(train_parquet)
     df_val = pd.read_parquet(val_parquet)
 
-    all_texts = list(set(df_train['text'].dropna().astype(str).tolist() + df_val['text'].dropna().astype(str).tolist()))
-    print(f"--> Loaded {len(all_texts):,} unique strings for tokenizer training")
+    all_texts = list(set(
+        df_train['text'].dropna().astype(str).str.lower().str.strip().tolist() +
+        df_val['text'].dropna().astype(str).str.lower().str.strip().tolist()
+    ))
+    print(f"--> Loaded {len(all_texts):,} unique lowercase strings for tokenizer training")
 
     # 2. Configure Tokenizer Architecture
     tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
+
+    # Built-in Normalizer: Automatically converts any input to clean lowercase
+    tokenizer.normalizer = normalizers.Sequence([
+        normalizers.NFKC(),
+        normalizers.Lowercase(),
+        normalizers.StripAccents()
+    ])
 
     # Pre-tokenizer: Whitespace, Punctuation, and Individual Digits
     tokenizer.pre_tokenizer = Sequence([
@@ -46,8 +56,8 @@ def train_custom_tokenizer(vocab_size=4000):
         Digits(individual_digits=True)
     ])
 
-    # Initial alphabet ensures all ASCII letters, digits, and basic symbols never fall back to [UNK]
-    alphabet = list(string.ascii_letters + string.digits + "-._'\"/:@#$%&*()+=[]{}|\\<>!?~`^,;")
+    # Only lowercase ASCII needed now — frees up 26 uppercase slots for real subwords!
+    alphabet = list(string.ascii_lowercase + string.digits + "-._'\"/:@#$%&*()+=[]{}|\\<>!?~`^,;")
     special_tokens = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"]
 
     trainer = WordPieceTrainer(
@@ -88,11 +98,12 @@ def train_custom_tokenizer(vocab_size=4000):
             f.write(token + "\n")
 
     print(f"--> [Saved] tokenizer.json: {tok_json_path}")
-    print(f"--> [Saved] vocab.txt:       {vocab_txt_path} ({len(sorted_vocab)} tokens)")
+    print(f"--> [Saved] vocab.txt:      {vocab_txt_path} ({len(sorted_vocab)} tokens)")
 
-    # 6. Save Hugging Face PreTrainedTokenizerFast (preserves exact custom pre-tokenizer)
+    # 6. Save Hugging Face PreTrainedTokenizerFast
     fast_tok = PreTrainedTokenizerFast(
         tokenizer_file=tok_json_path,
+        do_lower_case=True,
         pad_token="[PAD]",
         unk_token="[UNK]",
         cls_token="[CLS]",
@@ -102,17 +113,17 @@ def train_custom_tokenizer(vocab_size=4000):
     fast_tok.save_pretrained(TOKENIZER_DIR)
     print(f"--> [Saved] HuggingFace PreTrainedTokenizerFast in: {TOKENIZER_DIR}")
 
-    # 7. Verification Tests
+    # 7. Verification Tests (Proving case-invariance across all casings)
     test_samples = [
         "Supratim Mondal",
+        "supratim mondal",
+        "SUPRATIM MONDAL",
         "Sayantika Biswas",
         "0fxfps",
         "ShadowHunter99",
         "112_SAYANTIKA BISWAS",
         "AYAN CSE3048",
-        "toyexpo",
-        "get",
-        "mar",
+        "supratim gammer",
         "get mar"
     ]
     print("\n--- Verified Tokenizer Output ---")
@@ -122,7 +133,7 @@ def train_custom_tokenizer(vocab_size=4000):
         status = "⚠️ HAS UNK" if has_unk else "✅ CLEAN"
         print(f"[{status}] '{s}' -> {tokens}")
 
-    print("\n--> Custom domain tokenizer ready for training!")
+    print("\n--> Custom uncased domain tokenizer ready for training!")
 
 if __name__ == "__main__":
     v_size = int(sys.argv[1]) if len(sys.argv) > 1 else 4000

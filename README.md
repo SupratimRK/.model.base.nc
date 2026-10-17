@@ -27,23 +27,23 @@ model-index:
     metrics:
     - name: F1 Score
       type: f1
-      value: 0.9283
+      value: 0.9621
     - name: Accuracy
       type: accuracy
-      value: 0.9291
+      value: 0.9445
 widget:
 - text: "Sayantika Biswas"
   example_title: "Real Name (Bengali)"
 - text: "Supratim Mondal"
-  example_title: "Real Name"
+  example_title: "Real Name (De-biased)"
 - text: "Alexander Hamilton"
   example_title: "Real Name (Western)"
 - text: "ShadowHunter99"
   example_title: "Gamer Tag / Username"
-- text: "CSE3048"
-  example_title: "System Code"
-- text: "user_90123"
-  example_title: "Noisy Handle"
+- text: "AYAN CSE3048"
+  example_title: "Roll Number / Code"
+- text: "112_SAYANTIKA BISWAS"
+  example_title: "Prefix Noisy Handle"
 ---
 
 # CompactNameClassifier: Ultra-Efficient Name Classifier Trained From Scratch
@@ -59,7 +59,7 @@ widget:
 
 </div>
 
-`CompactNameClassifier` is a state-of-the-art, ultra-lightweight neural text classifier trained **from scratch** on a curated, balanced dataset of **510,162 records** (247,864 audited pure alphabetic human names across global cultures + 262,298 non-names, curated English vocabulary, usernames, gamer tags, and alphanumeric codes).
+`CompactNameClassifier` is a state-of-the-art, ultra-lightweight neural text classifier trained **from scratch** on a curated, de-biased dataset of **1,606,412 records** (1,458,041 train + 148,371 val; 1.18M clean human names across global and regional cultures + 280k non-names, unigrams, gamer tags, and alphanumeric codes).
 
 Unlike generic large language models or pretrained BERT variants, `CompactNameClassifier` has **zero external pretrained dependencies**, weighs just **~632 KB** (INT8 ONNX), and delivers sub-millisecond CPU inference (**< 0.45 ms per query**).
 
@@ -73,20 +73,20 @@ Unlike generic large language models or pretrained BERT variants, `CompactNameCl
 | **Total Parameters** | 4,380,000 params | **532,482 params** | **88% parameter reduction** |
 | **Vocabulary Size** | 30,522 tokens | **4,000 tokens** | **87% smaller vocabulary** |
 | **Sequence Length** | 16 tokens | **20 tokens** | **No truncation blind spots** |
-| **CPU Latency (Single Thread)** | ~1.20 ms | **< 0.45 ms** | **~3x faster inference** |
-| **Throughput** | ~800 queries/sec | **> 2,216 queries/sec** | Single CPU core |
-| **Validation Accuracy** | — | **92.91%** | Evaluated on held-out test split |
-| **Validation F1-Score** | — | **92.83%** | Balanced precision & recall |
-| **Corner Cases Benchmark** | — | **94.1% (16/17)** | High accuracy on tricky words & handles |
+| **CPU Latency (Single Thread)** | ~1.20 ms | **0.449 ms** | **~2.7x faster inference** |
+| **Throughput** | ~800 queries/sec | **2,228 queries/sec** | Single CPU core in Node.js |
+| **Validation Accuracy** | — | **94.45%** | Evaluated on 148k val split |
+| **Validation F1-Score** | — | **96.21%** | Weighted F1 score |
+| **Corner Cases Benchmark** | 52.9% (9/17) | **94.1% (16/17)** | Resistant to handle/roll-code leakage |
 
 ---
 
 ## 🧠 Architectural Innovations
 
-1. **Custom Domain WordPiece Tokenizer (4,000 Vocab)**:
-   - Configured with `Sequence([Whitespace(), Punctuation(), Digits(individual_digits=True)])`.
-   - Isolates digits (`0`–`9`) into 10 individual tokens, preventing arbitrary alphanumeric codes (`3048`, `99`, `112`) from collapsing into `[UNK]`.
-   - Cased vocabulary retains critical capitalization signals (e.g. CamelCase usernames like `ShadowHunter99` vs proper names like `Mar`).
+1. **Custom Domain WordPiece Tokenizer (100% Uncased, 4,000 Vocab)**:
+   - Configured with `Sequence([NFKC(), Lowercase(), StripAccents()])` and pre-tokenized via `Sequence([Whitespace(), Punctuation(), Digits(individual_digits=True)])`.
+   - Normalizes all input to lowercase at the Rust tokenizer level, making the model completely immune to uppercase/titlecase domain mismatches.
+   - Isolates individual digits (`0`–`9`), allowing alphanumeric noise (`112_`, `3048`, `99`) to be recognized without exploding the vocabulary.
 
 2. **Factorized Embeddings**:
    - Projects token vocabulary through `Embedding(4000, 64) -> Linear(64, 128, bias=False)`.
