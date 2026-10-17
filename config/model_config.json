@@ -11,6 +11,6 @@
     "0": "NON_NAME",
     "1": "REAL_NAME"
   },
-  "best_val_accuracy": 0.9444568008573104,
-  "best_val_f1": 0.9621136544393823
+  "best_val_accuracy": 0.942580927678782,
+  "best_val_f1": 0.9606740276938268
 }
