@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from transformers import PreTrainedTokenizerFast, get_cosine_schedule_with_warmup
+from torch.cuda.amp import GradScaler, autocast
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from model import CompactNameClassifier
@@ -49,19 +50,26 @@ else:
     device = torch.device("cpu")
     print("--> Warning: CUDA not available, using CPU")
 
-def pre_tokenize_dataset(tokenizer, texts, max_length=MAX_LENGTH):
-    """Pre-tokenize all texts in memory into contiguous int32 tensors."""
+def pre_tokenize_dataset(tokenizer, texts, max_length=MAX_LENGTH, chunk_size=100000):
+    """Pre-tokenize all texts in memory into contiguous int32 tensors in chunks to conserve RAM."""
     t0 = time.time()
-    print(f"--> Fast batch encoding {len(texts):,} strings into RAM...")
-    enc = tokenizer(
-        texts,
-        padding="max_length",
-        max_length=max_length,
-        truncation=True,
-        return_tensors="pt"
-    )
-    input_ids = enc["input_ids"].to(torch.int32)
-    attention_mask = enc["attention_mask"].to(torch.int32)
+    print(f"--> Fast batch encoding {len(texts):,} strings into RAM (chunks of {chunk_size:,})...")
+    all_input_ids = []
+    all_attention_mask = []
+    for i in range(0, len(texts), chunk_size):
+        chunk = texts[i:i + chunk_size]
+        enc = tokenizer(
+            chunk,
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
+            return_tensors="pt"
+        )
+        all_input_ids.append(enc["input_ids"].to(torch.int32))
+        all_attention_mask.append(enc["attention_mask"].to(torch.int32))
+
+    input_ids = torch.cat(all_input_ids, dim=0)
+    attention_mask = torch.cat(all_attention_mask, dim=0)
     print(f"    Encoding completed in {time.time() - t0:.2f}s (Tensor size in RAM: {input_ids.element_size() * input_ids.nelement() / (1024**2):.1f} MB)")
     return input_ids, attention_mask
 
@@ -145,7 +153,7 @@ def main():
     scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
     criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=LABEL_SMOOTHING)
 
-    scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
+    scaler = GradScaler(enabled=(device.type == "cuda"))
 
     # 6. Training Loop
     best_val_f1 = 0.0
@@ -166,7 +174,7 @@ def main():
             b_lbls = b_lbls.to(device, non_blocking=True)
 
             optimizer.zero_grad()
-            with torch.amp.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == "cuda")):
+            with autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
                 logits = model(b_ids, b_mask)
                 loss = criterion(logits, b_lbls)
 
@@ -189,7 +197,7 @@ def main():
             for b_ids, b_mask, b_lbls in val_loader:
                 b_ids = b_ids.to(device, non_blocking=True)
                 b_mask = b_mask.to(device, non_blocking=True)
-                with torch.amp.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == "cuda")):
+                with autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
                     logits = model(b_ids, b_mask)
                 preds = logits.argmax(dim=-1).cpu().numpy()
                 all_preds.extend(preds)
