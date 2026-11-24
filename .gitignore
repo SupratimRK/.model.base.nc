@@ -37,3 +37,10 @@ desktop.ini
 # Logs & temporary files
 *.log
 *.tmp
+
+# Others
+curated_datasets
+backups
+.review
+artifacts
+.temp/

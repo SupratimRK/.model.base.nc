@@ -11,6 +11,8 @@
     "0": "NON_NAME",
     "1": "REAL_NAME"
   },
-  "best_val_accuracy": 0.8870743897750396,
-  "best_val_f1": 0.9226102687192538
+  "best_val_accuracy": 0.9026922103131066,
+  "best_val_f1": 0.9277347558427811,
+  "training_scaffold": "auxiliary_gender_regularizer",
+  "aux_loss_weight": 0.15
 }

@@ -50,6 +50,13 @@ class CompactNameClassifier(nn.Module):
         # Dual Pooling: 128 (MeanPool) + 128 (MaxPool) = 256
         self.classifier = nn.Linear(hidden_dim * 2, 2)
 
+        # Auxiliary Training-Time Gender Head (scaffold regularizer, pruned at ONNX export)
+        self.gender_head = nn.Sequential(
+            nn.Linear(hidden_dim * 2, 64),
+            nn.GELU(),
+            nn.Linear(64, 2)
+        )
+
         self._init_weights()
 
     def _init_weights(self):
@@ -68,7 +75,7 @@ class CompactNameClassifier(nn.Module):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, return_aux=False):
         # input_ids: [batch_size, seq_len] (int32 or int64)
         # attention_mask: [batch_size, seq_len] (int32 or int64, 1 for real tokens, 0 for pad)
         seq_len = input_ids.size(1)
@@ -96,4 +103,9 @@ class CompactNameClassifier(nn.Module):
         features = torch.cat([mean_pooled, max_pooled], dim=-1)
         features = self.dropout(features)
         logits = self.classifier(features)
+
+        if return_aux and self.gender_head is not None:
+            aux_logits = self.gender_head(features)
+            return logits, aux_logits
+
         return logits
