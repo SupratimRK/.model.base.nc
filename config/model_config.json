@@ -11,8 +11,11 @@
     "0": "NON_NAME",
     "1": "REAL_NAME"
   },
-  "best_val_accuracy": 0.9026922103131066,
-  "best_val_f1": 0.9277347558427811,
-  "training_scaffold": "auxiliary_gender_regularizer",
+  "temperature": 0.8732,
+  "threshold": 0.305,
+  "word_threshold": 0.35,
+  "best_calib_accuracy": 0.986675,
+  "best_calib_f1": 0.9922136356332082,
+  "training_scaffold": "5fold_char_teacher_distillation_sce_swa",
   "aux_loss_weight": 0.15
 }

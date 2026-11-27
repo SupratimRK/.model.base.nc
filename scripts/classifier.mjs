@@ -11,12 +11,24 @@ const MODEL_PATH = path.join(ROOT_DIR, 'models', 'model_int8.onnx');
 const VOCAB_PATH = path.join(ROOT_DIR, 'models', 'tokenizer', 'vocab.txt');
 const CONFIG_PATH = path.join(ROOT_DIR, 'config', 'model_config.json');
 
+function normalizeText(text) {
+  return text
+    .normalize('NFKC')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 export class CompactNameClassifier {
   constructor() {
     this.session = null;
     this.vocab = new Map();
     this.idToVocab = new Map();
     this.maxLength = 20;
+    this.temperature = 1.0;
+    this.threshold = 0.5;
+    this.wordThreshold = 0.35;
     this.isReady = false;
 
     // Special token IDs
@@ -43,11 +55,20 @@ export class CompactNameClassifier {
       }
     }
 
-    // 2. Load Config if available
+    // 2. Load Config if available (architecture + calibrated temperature & thresholds)
     if (fs.existsSync(CONFIG_PATH)) {
       try {
         const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
         this.maxLength = cfg.max_length || 20;
+        if (typeof cfg.temperature === 'number' && cfg.temperature > 0) {
+          this.temperature = cfg.temperature;
+        }
+        if (typeof cfg.threshold === 'number') {
+          this.threshold = cfg.threshold;
+        }
+        if (typeof cfg.word_threshold === 'number') {
+          this.wordThreshold = cfg.word_threshold;
+        }
       } catch (e) {}
     }
 
@@ -64,8 +85,16 @@ export class CompactNameClassifier {
   }
 
   tokenize(text) {
-    if (!text || typeof text !== 'string') return [this.clsId, this.sepId];
-    text = text.toLowerCase().trim();
+    if (!text || typeof text !== 'string') {
+      const inputIds = new Int32Array(this.maxLength);
+      const attentionMask = new Int32Array(this.maxLength);
+      inputIds[0] = this.clsId;
+      inputIds[1] = this.sepId;
+      attentionMask[0] = 1;
+      attentionMask[1] = 1;
+      return { inputIds, attentionMask };
+    }
+    text = normalizeText(text);
 
     // Pre-tokenize: Whitespace, Punctuation, and Individual Digits
     // Split text into tokens separating punctuation and digits
@@ -137,16 +166,75 @@ export class CompactNameClassifier {
     return { inputIds, attentionMask };
   }
 
-  softmax(arr) {
-    const maxVal = Math.max(arr[0], arr[1]);
-    const exp0 = Math.exp(arr[0] - maxVal);
-    const exp1 = Math.exp(arr[1] - maxVal);
+  softmaxPair(l0, l1) {
+    const t = this.temperature || 1.0;
+    const s0 = l0 / t;
+    const s1 = l1 / t;
+    const maxVal = Math.max(s0, s1);
+    const exp0 = Math.exp(s0 - maxVal);
+    const exp1 = Math.exp(s1 - maxVal);
     const sum = exp0 + exp1;
     return [exp0 / sum, exp1 / sum];
   }
 
-  async predict(text) {
+  async predictBatch(texts) {
     if (!this.isReady) await this.init();
+    const batchSize = texts.length;
+    const flatIds = new Int32Array(batchSize * this.maxLength);
+    const flatMask = new Int32Array(batchSize * this.maxLength);
+
+    for (let b = 0; b < batchSize; b++) {
+      const { inputIds, attentionMask } = this.tokenize(texts[b]);
+      flatIds.set(inputIds, b * this.maxLength);
+      flatMask.set(attentionMask, b * this.maxLength);
+    }
+
+    const tensorIds = new ort.Tensor('int32', flatIds, [batchSize, this.maxLength]);
+    const tensorMask = new ort.Tensor('int32', flatMask, [batchSize, this.maxLength]);
+    const outputMap = await this.session.run({
+      input_ids: tensorIds,
+      attention_mask: tensorMask
+    });
+    const logits = outputMap.logits.data;
+    const results = [];
+    for (let b = 0; b < batchSize; b++) {
+      const probs = this.softmaxPair(logits[b * 2], logits[b * 2 + 1]);
+      results.push(probs);
+    }
+    return results;
+  }
+
+  async predict(text, options = {}) {
+    if (!this.isReady) await this.init();
+
+    const threshold = typeof options.threshold === 'number' ? options.threshold : this.threshold;
+    const consolidateWords = Boolean(options.consolidateWords);
+    const wordThreshold = typeof options.wordThreshold === 'number' ? options.wordThreshold : this.wordThreshold;
+
+    const norm = typeof text === 'string' ? normalizeText(text) : '';
+    const words = consolidateWords && norm ? norm.split(/\s+/).filter(Boolean) : [];
+
+    if (consolidateWords && words.length > 1) {
+      const batchProbs = await this.predictBatch([text, ...words]);
+      const fullProbs = batchProbs[0];
+      const wordProbs = batchProbs.slice(1);
+      const minWordReal = Math.min(...wordProbs.map(p => p[1]));
+
+      const isReal = fullProbs[1] >= threshold && minWordReal >= wordThreshold;
+      const classification = isReal ? 'REAL_NAME' : 'NON_NAME';
+      const confidence = isReal ? Math.min(fullProbs[1], minWordReal) : Math.max(fullProbs[0], 1 - minWordReal);
+
+      return {
+        text,
+        classification,
+        confidence,
+        raw_probs: {
+          non_name: fullProbs[0],
+          real_name: fullProbs[1]
+        },
+        min_word_real: minWordReal
+      };
+    }
 
     const { inputIds, attentionMask } = this.tokenize(text);
 
@@ -161,9 +249,9 @@ export class CompactNameClassifier {
 
     const outputMap = await this.session.run(feeds);
     const logits = outputMap.logits.data; // Float32Array [non_name_logit, real_name_logit]
-    const probs = this.softmax(logits);
+    const probs = this.softmaxPair(logits[0], logits[1]);
 
-    const isReal = probs[1] >= probs[0];
+    const isReal = probs[1] >= threshold;
     const classification = isReal ? 'REAL_NAME' : 'NON_NAME';
     const confidence = isReal ? probs[1] : probs[0];
 

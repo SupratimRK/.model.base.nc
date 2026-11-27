@@ -30,6 +30,9 @@ class NameClassifier:
             self.cfg = json.load(f)
 
         self.max_length = self.cfg.get("max_length", 20)
+        self.temperature = float(self.cfg.get("temperature", 1.0))
+        self.threshold = float(self.cfg.get("threshold", 0.5))
+        self.word_threshold = float(self.cfg.get("word_threshold", 0.35))
         self.labels = {int(k): v for k, v in self.cfg.get("labels", {"0": "NON_NAME", "1": "REAL_NAME"}).items()}
 
         # Load Tokenizer
@@ -69,13 +72,11 @@ class NameClassifier:
             self.backend_name = f"PyTorch ({self.device})"
 
     def softmax(self, logits):
-        e_x = np.exp(logits - np.max(logits, axis=-1, keepdims=True))
+        scaled = logits / max(1e-6, self.temperature)
+        e_x = np.exp(scaled - np.max(scaled, axis=-1, keepdims=True))
         return e_x / np.sum(e_x, axis=-1, keepdims=True)
 
-    def predict(self, texts):
-        if isinstance(texts, str):
-            texts = [texts]
-
+    def _raw_probs_batch(self, texts):
         enc = self.tokenizer(
             texts,
             padding="max_length",
@@ -93,29 +94,61 @@ class NameClassifier:
                 "attention_mask": attention_mask
             }
             logits = self.session.run(None, ort_inputs)[0]
-            probs = self.softmax(logits)
-        else:
-            with torch.no_grad():
-                ids_t = torch.tensor(input_ids, device=self.device)
-                mask_t = torch.tensor(attention_mask, device=self.device)
-                logits_t = self.model(ids_t, mask_t)
-                probs = torch.softmax(logits_t, dim=-1).cpu().numpy()
+            return self.softmax(logits)
+
+        with torch.no_grad():
+            ids_t = torch.tensor(input_ids, device=self.device)
+            mask_t = torch.tensor(attention_mask, device=self.device)
+            logits_t = self.model(ids_t, mask_t) / max(1e-6, self.temperature)
+            return torch.softmax(logits_t, dim=-1).cpu().numpy()
+
+    def predict(self, texts, consolidate_words=False, threshold=None, word_threshold=None):
+        if isinstance(texts, str):
+            texts = [texts]
+
+        tau = self.threshold if threshold is None else float(threshold)
+        w_tau = self.word_threshold if word_threshold is None else float(word_threshold)
+        probs = self._raw_probs_batch(texts)
+
+        min_word_probs = None
+        if consolidate_words:
+            words_per_text = [str(t).strip().split() for t in texts]
+            uniq_words = sorted({w for ws in words_per_text if len(ws) > 1 for w in ws})
+            w_map = {}
+            if uniq_words:
+                w_probs = self._raw_probs_batch(uniq_words)
+                w_map = {w: float(p[1]) for w, p in zip(uniq_words, w_probs)}
+            min_word_probs = [
+                min((w_map.get(w, 1.0) for w in ws), default=1.0) if len(ws) > 1 else float(probs[i][1])
+                for i, ws in enumerate(words_per_text)
+            ]
 
         results = []
         for i, text in enumerate(texts):
-            pred_idx = int(np.argmax(probs[i]))
-            label = self.labels[pred_idx]
-            conf = float(probs[i][pred_idx])
+            p_non = float(probs[i][0])
+            p_real = float(probs[i][1])
+            if consolidate_words and min_word_probs is not None:
+                is_real = (p_real >= tau) and (min_word_probs[i] >= w_tau)
+                conf = min(p_real, min_word_probs[i]) if is_real else max(p_non, 1.0 - min_word_probs[i])
+            else:
+                is_real = p_real >= tau
+                conf = p_real if is_real else p_non
 
-            results.append({
+            pred_idx = 1 if is_real else 0
+            label = self.labels[pred_idx]
+
+            item = {
                 "text": text,
                 "classification": label,
-                "confidence": conf,
+                "confidence": float(conf),
                 "raw_probs": {
-                    "non_name": float(probs[i][0]),
-                    "real_name": float(probs[i][1])
+                    "non_name": p_non,
+                    "real_name": p_real
                 }
-            })
+            }
+            if consolidate_words and min_word_probs is not None:
+                item["min_word_real"] = float(min_word_probs[i])
+            results.append(item)
         return results
 
 def run_test_suite(classifier):

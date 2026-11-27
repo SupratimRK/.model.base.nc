@@ -13,31 +13,29 @@ from transformers import PreTrainedTokenizerFast
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 SCRATCH_DIR = os.path.abspath(os.path.join(PROJECT_ROOT, "..", ".model.scratch"))
-MASTER_DATA_DIR = os.path.join(SCRATCH_DIR, "master_datasets")
+CURATED_TRAIN_PARQUET = os.path.join(PROJECT_ROOT, "curated_datasets", "train_cleaned.parquet")
+FALLBACK_TRAIN_PARQUET = os.path.join(PROJECT_ROOT, "curated_datasets", "train_curated.parquet")
 TOKENIZER_DIR = os.path.join(PROJECT_ROOT, "models", "tokenizer")
 
 os.makedirs(TOKENIZER_DIR, exist_ok=True)
 
 def train_custom_tokenizer(vocab_size=4000):
     print("===============================================================")
-    print("Training Custom Domain WordPiece Tokenizer (100% Uncased)")
+    print("Training Custom Domain WordPiece Tokenizer (100% Uncased, Train-Only)")
     print("===============================================================")
     print(f"Target Vocabulary Size: {vocab_size}")
     print(f"Normalizer: NFKC + Lowercase + StripAccents")
     print(f"Pre-Tokenizer: Whitespace + Punctuation + Digits(individual_digits=True)")
 
-    # 1. Load Texts from Master Dataset
-    train_parquet = os.path.join(MASTER_DATA_DIR, "train.parquet")
-    val_parquet = os.path.join(MASTER_DATA_DIR, "val.parquet")
-    print(f"--> Reading texts from: {train_parquet}")
-    df_train = pd.read_parquet(train_parquet)
-    df_val = pd.read_parquet(val_parquet)
+    # 1. Load Texts strictly from cleaned Train dataset (zero val leakage)
+    train_parquet = CURATED_TRAIN_PARQUET if os.path.exists(CURATED_TRAIN_PARQUET) else FALLBACK_TRAIN_PARQUET
+    print(f"--> Reading texts strictly from: {train_parquet}")
+    df_train = pd.read_parquet(train_parquet, columns=["text"])
 
     all_texts = list(set(
-        df_train['text'].dropna().astype(str).str.lower().str.strip().tolist() +
-        df_val['text'].dropna().astype(str).str.lower().str.strip().tolist()
+        df_train['text'].dropna().astype(str).str.lower().str.strip().tolist()
     ))
-    print(f"--> Loaded {len(all_texts):,} unique lowercase strings for tokenizer training")
+    print(f"--> Loaded {len(all_texts):,} unique lowercase train strings for tokenizer training")
 
     # 2. Configure Tokenizer Architecture
     tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
